@@ -42,9 +42,9 @@ The system follows a microservice-first approach where the UI and Backend are se
 
 ```mermaid
 graph TD
-    User[User (Streamlit UI)] -->|HTTP Request| API[FastAPI Microservice /query]
-    API -->|Query Embedding| FAISS[FAISS Vector Retrieval]
-    FAISS -->|Top-K Context| LLM[LLM (Gemini)]
+    User["User (Streamlit UI)"] -->|HTTP Request| API["FastAPI Microservice /query"]
+    API -->|Query Embedding| FAISS["FAISS Vector Retrieval"]
+    FAISS -->|Top-K Context| LLM["LLM (Gemini)"]
     LLM -->|Natural Language Answer| API
     API -->|Response| User
 ```
