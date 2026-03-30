@@ -18,5 +18,4 @@ streamlit
 requests
 
 # Optional: may be required by sentence-transformers
-torch
-transformers
+
