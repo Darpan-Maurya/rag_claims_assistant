@@ -1,0 +1,22 @@
+# Core data libraries
+pandas
+numpy
+
+# RAG / embeddings / vector store
+sentence-transformers
+faiss-cpu
+
+# LLM / Generative API
+google-generative-ai
+python-dotenv
+
+# Web / UI / API
+fastapi
+uvicorn[standard]
+pydantic
+streamlit
+requests
+
+# Optional: may be required by sentence-transformers
+torch
+transformers
