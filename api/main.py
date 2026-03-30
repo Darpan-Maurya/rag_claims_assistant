@@ -36,6 +36,11 @@ class QueryResponse(BaseModel):
 # =====================
 # ROUTES
 # =====================
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+
 @app.post("/query", response_model=QueryResponse)
 def query_claims(request: QueryRequest):
     """

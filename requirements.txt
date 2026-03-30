@@ -4,6 +4,7 @@ torchvision
 # Core data libraries
 pandas
 numpy
+pyarrow
 
 # RAG / embeddings / vector store
 sentence-transformers
@@ -21,4 +22,3 @@ streamlit
 requests
 
 # Optional: may be required by sentence-transformers
-
