@@ -4,8 +4,10 @@ import faiss
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 
-INDEX_PATH = Path("rag/vector_store.faiss")
-METADATA_PATH = Path("rag/metadata.parquet")
+BASE_DIR = Path(__file__).resolve().parent  # points to rag/ folder
+
+INDEX_PATH = BASE_DIR / "vector_store.faiss"
+METADATA_PATH = BASE_DIR / "metadata.parquet" 
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 
