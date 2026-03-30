@@ -1,3 +1,6 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
 # Core data libraries
 pandas
 numpy
