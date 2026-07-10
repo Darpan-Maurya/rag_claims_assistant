@@ -1,0 +1,49 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  qdrant:
+    image: qdrant/qdrant:v1.10.1
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  api:
+    build: .
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: production
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      RAG_API_KEY: ${RAG_API_KEY:-local-dev-key}
+      QDRANT_URL: http://qdrant:6333
+      REDIS_URL: redis://redis:6379/0
+      ENABLE_QUERY_CACHE: "true"
+      QUERY_CACHE_TTL_SECONDS: "300"
+      CORS_ORIGINS: http://localhost:8501,http://127.0.0.1:8501
+      LOG_FULL_QUERIES: "false"
+    volumes:
+      - ./data:/app/data
+      - ./rag:/app/rag
+    depends_on:
+      - redis
+      - qdrant
+
+  ui:
+    build: .
+    command: streamlit run ui_app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    environment:
+      API_BASE_URL: http://api:8000
+      RAG_API_KEY: ${RAG_API_KEY:-local-dev-key}
+    depends_on:
+      - api
+
+volumes:
+  qdrant_data:

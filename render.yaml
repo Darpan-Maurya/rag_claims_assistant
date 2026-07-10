@@ -4,9 +4,44 @@ services:
     runtime: python
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt && python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
     startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
+    healthCheckPath: /ready
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.11
+      - key: APP_ENV
+        value: production
       - key: GEMINI_API_KEY
+        sync: false
+      - key: RAG_API_KEY
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: QDRANT_COLLECTION
+        value: claims_chunks
+      - key: REDIS_URL
+        sync: false
+      - key: ENABLE_QUERY_CACHE
+        value: "true"
+      - key: QUERY_CACHE_TTL_SECONDS
+        value: "300"
+      - key: RAG_RBAC_USERS
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://rag-claims-streamlit.onrender.com
+      - key: LOG_FULL_QUERIES
+        value: "false"
+
+  - type: web
+    name: rag-claims-streamlit
+    runtime: python
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: streamlit run ui_app.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: API_BASE_URL
+        value: https://rag-claims-fastapi.onrender.com
+      - key: RAG_API_KEY
         sync: false

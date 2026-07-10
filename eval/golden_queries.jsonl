@@ -1,0 +1,5 @@
+{"query":"What percentage of claims are approved?","expected_route":"ANALYTICS","expected_filters":{}}
+{"query":"Show me denied claims for diabetes patients last quarter","expected_route":"RAG","expected_filters":{"claim_status":"DENIED","disease":"Diabetes"}}
+{"query":"What are the common denial reasons for cardiology claims?","expected_route":"ANALYTICS","expected_filters":{"speciality":"Cardiology"}}
+{"query":"Show claims over 100000 for out-of-network provider denials","expected_route":"RAG","expected_filters":{"amount_min":100000.0,"denial_reason":"Out-of-network provider"}}
+{"query":"Find similar rejected diabetic claims with missing authorization","expected_route":"RAG","expected_filters":{}}

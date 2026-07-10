@@ -8,7 +8,7 @@ pyarrow
 
 # RAG / embeddings / vector store
 sentence-transformers
-faiss-cpu
+qdrant-client
 
 # LLM / Generative API
 google-generativeai
@@ -20,5 +20,7 @@ uvicorn[standard]
 pydantic
 streamlit
 requests
+pytest
+redis
 
 # Optional: may be required by sentence-transformers
