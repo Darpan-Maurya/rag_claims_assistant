@@ -72,6 +72,7 @@ KNOWN_DENIAL_REASONS = [
 @dataclass
 class QueryFilters:
     claim_status: Optional[str] = None
+    negated_claim_status: Optional[str] = None
     disease: Optional[str] = None
     speciality: Optional[str] = None
     payer_name: Optional[str] = None
@@ -105,7 +106,12 @@ def extract_filters(query: str, df: Optional[pd.DataFrame] = None) -> QueryFilte
     filters = QueryFilters()
 
     for status in KNOWN_STATUSES:
-        if status.lower() in q or status.lower().rstrip("ed") in q:
+        status_l = status.lower()
+        # detect explicit negation like "not approved"
+        if re.search(rf"\bnot\s+{re.escape(status_l)}\b", q):
+            filters.negated_claim_status = status
+            break
+        if status_l in q:
             filters.claim_status = status
             break
 
@@ -152,6 +158,8 @@ def apply_filters(df: pd.DataFrame, filters: QueryFilters) -> pd.DataFrame:
     filter_dict = filters.to_dict()
     if "claim_status" in filter_dict:
         result = result[result["claim_status"] == filters.claim_status]
+    if getattr(filters, "negated_claim_status", None):
+        result = result[result["claim_status"] != filters.negated_claim_status]
     if "disease" in filter_dict:
         result = result[result["disease"] == filters.disease]
     if "speciality" in filter_dict:
