@@ -13,7 +13,7 @@ except ImportError:  # pragma: no cover - handled in runtime readiness
 class QueryCache:
     def __init__(self) -> None:
         self.enabled = bool(settings.enable_query_cache and settings.redis_url and redis)
-        self.prefix = "rag_claims:query:v1"
+        self.prefix = "rag_claims:query:v2"
         self.client = None
         if self.enabled:
             self.client = redis.Redis.from_url(  # type: ignore[union-attr]
@@ -50,27 +50,37 @@ class QueryCache:
     def get(self, key: str) -> Optional[Dict[str, Any]]:
         if not self.enabled or self.client is None:
             return None
-        value = self.client.get(key)
-        if not value:
+        try:
+            value = self.client.get(key)
+            if not value:
+                return None
+            return json.loads(value)
+        except Exception:
+            # Cache failure must degrade to a normal request, never a 500.
             return None
-        return json.loads(value)
 
     def set(self, key: str, value: Dict[str, Any]) -> None:
         if not self.enabled or self.client is None:
             return
-        self.client.setex(
-            key,
-            settings.query_cache_ttl_seconds,
-            json.dumps(value, default=str),
-        )
+        try:
+            self.client.setex(
+                key,
+                settings.query_cache_ttl_seconds,
+                json.dumps(value, default=str),
+            )
+        except Exception:
+            return
 
     def invalidate_all(self) -> int:
         if not self.enabled or self.client is None:
             return 0
-        deleted = 0
-        for key in self.client.scan_iter(f"{self.prefix}:*"):
-            deleted += int(self.client.delete(key))
-        return deleted
+        try:
+            deleted = 0
+            for key in self.client.scan_iter(f"{self.prefix}:*"):
+                deleted += int(self.client.delete(key))
+            return deleted
+        except Exception:
+            return 0
 
     def readiness(self) -> Dict[str, Any]:
         if not settings.enable_query_cache:

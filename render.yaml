@@ -2,9 +2,10 @@ services:
   - type: web
     name: rag-claims-fastapi
     runtime: python
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt && python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt && python -m training.train_query_classifier && python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
     startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /ready
+    # Liveness must not block the ingestion endpoint; /ready reports RAG/data state.
+    healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.11
@@ -26,6 +27,12 @@ services:
         value: "true"
       - key: QUERY_CACHE_TTL_SECONDS
         value: "300"
+      - key: ENABLE_RERANKER
+        sync: false
+      - key: RERANKER_MODEL_NAME
+        value: cross-encoder/ms-marco-MiniLM-L-6-v2
+      - key: MIN_DENSE_RELEVANCE_SCORE
+        value: "0.20"
       - key: RAG_RBAC_USERS
         sync: false
       - key: CORS_ORIGINS

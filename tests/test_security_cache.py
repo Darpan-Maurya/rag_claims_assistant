@@ -1,6 +1,6 @@
 from core.cache import QueryCache
 from core.security import Principal, apply_row_level_access, enforce_filter_access
-from orchestrate.router import QueryFilters
+from orchestrate.filters import QueryFilters
 
 import pandas as pd
 import pytest

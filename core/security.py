@@ -5,7 +5,7 @@ from typing import Iterable, List, Optional
 import pandas as pd
 
 from core.config import settings
-from orchestrate.router import QueryFilters
+from orchestrate.filters import QueryFilters
 
 
 @dataclass(frozen=True)

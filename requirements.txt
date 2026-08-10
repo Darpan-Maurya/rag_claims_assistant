@@ -8,10 +8,10 @@ pyarrow
 
 # RAG / embeddings / vector store
 sentence-transformers
-qdrant-client
+qdrant-client>=1.10,<2
 
 # LLM / Generative API
-google-generativeai
+google-genai>=2.0,<3
 python-dotenv
 
 # Web / UI / API
@@ -22,5 +22,6 @@ streamlit
 requests
 pytest
 redis
+scikit-learn>=1.4,<2
 
 # Optional: may be required by sentence-transformers

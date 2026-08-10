@@ -80,8 +80,24 @@ if user_query:
             answer = payload["answer"]
             st.session_state.last_response = payload
 
-    except Exception as e:
-        answer = f"Error communicating with backend: {e}"
+    except requests.HTTPError as exc:
+        status_code = exc.response.status_code if exc.response is not None else None
+        detail = ""
+        if exc.response is not None:
+            try:
+                detail = exc.response.json().get("detail", "")
+            except ValueError:
+                detail = exc.response.text
+        if status_code == 503:
+            answer = (
+                "The requested data service is not ready yet. Analytics and LLM-only questions can run "
+                "without Qdrant; RAG questions need a completed ingestion job. "
+                + (detail or "Check the backend `/ready` endpoint.")
+            )
+        else:
+            answer = detail or f"Backend request failed with status {status_code}."
+    except requests.RequestException:
+        answer = "The backend could not be reached. Check the API URL and service health."
 
     # Show assistant response
     st.session_state.messages.append(

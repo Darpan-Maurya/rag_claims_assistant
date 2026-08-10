@@ -192,3 +192,15 @@ class AppStorage:
                 (job_id,),
             ).fetchone()
         return dict(row) if row else None
+
+    def get_active_ingestion_job(self) -> Optional[Dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM ingestion_jobs
+                WHERE status IN ('queued', 'running')
+                ORDER BY created_at ASC
+                LIMIT 1
+                """
+            ).fetchone()
+        return dict(row) if row else None

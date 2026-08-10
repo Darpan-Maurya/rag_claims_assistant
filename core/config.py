@@ -24,6 +24,15 @@ def _as_int(value: str | None, default: int) -> int:
         return default
 
 
+def _as_float(value: str | None, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
 def _as_list(value: str | None, default: List[str]) -> List[str]:
     if not value:
         return default
@@ -48,7 +57,9 @@ class Settings:
     max_query_chars: int = _as_int(os.getenv("MAX_QUERY_CHARS"), 1200)
     default_top_k: int = _as_int(os.getenv("DEFAULT_TOP_K"), 25)
     max_top_k: int = _as_int(os.getenv("MAX_TOP_K"), 50)
-    min_relevance_score: float = float(os.getenv("MIN_RELEVANCE_SCORE", "0.08"))
+    min_dense_relevance_score: float = _as_float(
+        os.getenv("MIN_DENSE_RELEVANCE_SCORE"), 0.20
+    )
 
     raw_data_path: Path = Path(os.getenv("RAW_DATA_PATH", "data/raw/claims.csv"))
     processed_data_path: Path = Path(
@@ -73,6 +84,16 @@ class Settings:
     )
     llm_model_name: str = os.getenv("GEMINI_MODEL_NAME", "models/gemini-flash-latest")
     gemini_api_key: str | None = os.getenv("GEMINI_API_KEY")
+    query_classifier_model_path: Path = Path(
+        os.getenv("QUERY_CLASSIFIER_MODEL_PATH", "models/query_classifier.joblib")
+    )
+    router_min_confidence: float = _as_float(os.getenv("ROUTER_MIN_CONFIDENCE"), 0.40)
+    guardrail_min_confidence: float = _as_float(os.getenv("GUARDRAIL_MIN_CONFIDENCE"), 0.55)
+    web_search_provider: str = os.getenv("WEB_SEARCH_PROVIDER", "disabled").strip().lower()
+    tavily_api_key: str | None = os.getenv("TAVILY_API_KEY")
+    web_search_max_results: int = _as_int(os.getenv("WEB_SEARCH_MAX_RESULTS"), 5)
+    web_search_timeout_seconds: int = _as_int(os.getenv("WEB_SEARCH_TIMEOUT_SECONDS"), 12)
+    web_search_allowed_domains: List[str] = None  # type: ignore[assignment]
     enable_reranker: bool = _as_bool(os.getenv("ENABLE_RERANKER"), False)
     reranker_model_name: str = os.getenv(
         "RERANKER_MODEL_NAME", "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -90,6 +111,11 @@ class Settings:
             self,
             "rbac_users",
             _as_json(os.getenv("RAG_RBAC_USERS"), []),
+        )
+        object.__setattr__(
+            self,
+            "web_search_allowed_domains",
+            _as_list(os.getenv("WEB_SEARCH_ALLOWED_DOMAINS"), []),
         )
 
 

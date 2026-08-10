@@ -1,202 +1,149 @@
-import re
-from dataclasses import asdict, dataclass
-from datetime import date, timedelta
-from typing import Dict, Optional
+from dataclasses import dataclass
+from typing import Dict
 
-import pandas as pd
-
-
-ANALYTICS_KEYWORDS = [
-    "percentage",
-    "percent",
-    "rate",
-    "count",
-    "how many",
-    "total",
-    "average",
-    "avg",
-    "sum",
-    "trend",
-    "breakdown",
-    "common",
-    "top",
-]
-
-RAG_KEYWORDS = [
-    "claims",
-    "denied",
-    "approved",
-    "pending",
-    "last quarter",
-    "reasons",
-    "show me",
-    "why",
-    "examples",
-    "evidence",
-]
-
-DECISION_KEYWORDS = [
-    "will my claim",
-    "should i",
-    "if i claim",
-    "guarantee",
-]
-
-KNOWN_DISEASES = [
-    "Diabetes",
-    "Hypertension",
-    "Asthma",
-    "COPD",
-    "Coronary Artery Disease",
-    "Covid-19",
-]
-
-KNOWN_SPECIALITIES = [
-    "Endocrinology",
-    "Cardiology",
-    "Pulmonology",
-    "General Medicine",
-]
-
-KNOWN_STATUSES = ["APPROVED", "DENIED", "PENDING"]
-
-KNOWN_DENIAL_REASONS = [
-    "Insufficient documentation",
-    "Not medically necessary",
-    "Pre-authorization missing",
-    "Coverage limit exceeded",
-    "Out-of-network provider",
-]
+from core.config import settings
+from core.query_classifier import BLOCKED_LABELS, QueryClassification
 
 
-@dataclass
-class QueryFilters:
-    claim_status: Optional[str] = None
-    negated_claim_status: Optional[str] = None
-    disease: Optional[str] = None
-    speciality: Optional[str] = None
-    payer_name: Optional[str] = None
-    denial_reason: Optional[str] = None
-    service_date_start: Optional[str] = None
-    service_date_end: Optional[str] = None
-    amount_min: Optional[float] = None
-    amount_max: Optional[float] = None
+@dataclass(frozen=True)
+class DataSource:
+    key: str
+    route: str
+    description: str
+    cost_class: str
+    latency_class: str
+
+
+DATA_SOURCES = {
+    "claims_analytics": DataSource(
+        key="claims_analytics",
+        route="ANALYTICS",
+        description="Deterministic aggregations over authorized claims rows.",
+        cost_class="low",
+        latency_class="low",
+    ),
+    "claims_rag": DataSource(
+        key="claims_rag",
+        route="RAG",
+        description="Authorized internal claim evidence through hybrid retrieval.",
+        cost_class="medium",
+        latency_class="medium",
+    ),
+    "public_web": DataSource(
+        key="public_web",
+        route="WEB_SEARCH",
+        description="Current public information from an explicitly configured web provider.",
+        cost_class="high",
+        latency_class="high",
+    ),
+    "general_llm": DataSource(
+        key="general_llm",
+        route="LLM_ONLY",
+        description="General explanation without accessing internal claims data.",
+        cost_class="medium",
+        latency_class="medium",
+    ),
+    "policy_refusal": DataSource(
+        key="policy_refusal",
+        route="DECISION_HELP",
+        description="Unsupported individual coverage decision request.",
+        cost_class="none",
+        latency_class="low",
+    ),
+    "safety_block": DataSource(
+        key="safety_classifier",
+        route="BLOCKED",
+        description="Model-classified unsafe or private-data request.",
+        cost_class="none",
+        latency_class="low",
+    ),
+}
+
+LABEL_TO_SOURCE = {
+    "ANALYTICS": "claims_analytics",
+    "CLAIMS_RAG": "claims_rag",
+    "DECISION_HELP": "policy_refusal",
+    "LLM_ONLY": "general_llm",
+    "WEB_SEARCH": "public_web",
+}
+
+LABEL_REASON_CODES = {
+    "ANALYTICS": "deterministic_analytics",
+    "CLAIMS_RAG": "single_source_retrieval",
+    "DECISION_HELP": "individual_coverage_decision",
+    "LLM_ONLY": "no_internal_data_access",
+    "WEB_SEARCH": "live_public_information",
+}
+
+
+@dataclass(frozen=True)
+class QueryPlan:
+    route: str
+    data_source: str
+    reason_codes: tuple[str, ...]
+    estimated_cost: str
+    estimated_latency: str
+    classifier: Dict[str, object]
+    warnings: tuple[str, ...] = ()
 
     def to_dict(self) -> Dict[str, object]:
-        return {key: value for key, value in asdict(self).items() if value is not None}
+        return {
+            "route": self.route,
+            "data_source": self.data_source,
+            "reason_codes": list(self.reason_codes),
+            "estimated_cost": self.estimated_cost,
+            "estimated_latency": self.estimated_latency,
+            "classifier": self.classifier,
+            "warnings": list(self.warnings),
+        }
 
 
-def classify_query(query: str) -> str:
-    q = query.lower()
-
-    if any(k in q for k in DECISION_KEYWORDS):
-        return "DECISION_HELP"
-
-    if any(k in q for k in ANALYTICS_KEYWORDS):
-        return "ANALYTICS"
-
-    if any(k in q for k in RAG_KEYWORDS):
-        return "RAG"
-
-    return "RAG"
-
-
-def extract_filters(query: str, df: Optional[pd.DataFrame] = None) -> QueryFilters:
-    q = query.lower()
-    filters = QueryFilters()
-
-    for status in KNOWN_STATUSES:
-        status_l = status.lower()
-        # detect explicit negation like "not approved"
-        if re.search(rf"\bnot\s+{re.escape(status_l)}\b", q):
-            filters.negated_claim_status = status
-            break
-        if status_l in q:
-            filters.claim_status = status
-            break
-
-    for disease in KNOWN_DISEASES:
-        if disease.lower() in q:
-            filters.disease = disease
-            break
-
-    for speciality in KNOWN_SPECIALITIES:
-        if speciality.lower() in q:
-            filters.speciality = speciality
-            break
-
-    for reason in KNOWN_DENIAL_REASONS:
-        if reason.lower() in q:
-            filters.denial_reason = reason
-            break
-
-    if df is not None and "payer_name" in df.columns:
-        for payer in sorted(df["payer_name"].dropna().astype(str).unique(), key=len, reverse=True):
-            if payer.lower() in q:
-                filters.payer_name = payer
-                break
-
-    amount_match = re.search(r"(?:over|above|greater than|more than)\s+([\d,]+(?:\.\d+)?)", q)
-    if amount_match:
-        filters.amount_min = float(amount_match.group(1).replace(",", ""))
-
-    amount_match = re.search(r"(?:under|below|less than)\s+([\d,]+(?:\.\d+)?)", q)
-    if amount_match:
-        filters.amount_max = float(amount_match.group(1).replace(",", ""))
-
-    if "last quarter" in q:
-        reference = _reference_date(df)
-        quarter_start, quarter_end = _previous_quarter(reference)
-        filters.service_date_start = quarter_start.isoformat()
-        filters.service_date_end = quarter_end.isoformat()
-
-    return filters
+def _plan_for(
+    source_key: str,
+    classification: QueryClassification,
+    *reason_codes: str,
+    warnings: tuple[str, ...] = (),
+) -> QueryPlan:
+    source = DATA_SOURCES[source_key]
+    return QueryPlan(
+        route=source.route,
+        data_source=source.key,
+        reason_codes=tuple(reason_codes),
+        estimated_cost=source.cost_class,
+        estimated_latency=source.latency_class,
+        classifier=classification.to_dict(),
+        warnings=warnings,
+    )
 
 
-def apply_filters(df: pd.DataFrame, filters: QueryFilters) -> pd.DataFrame:
-    result = df
-    filter_dict = filters.to_dict()
-    if "claim_status" in filter_dict:
-        result = result[result["claim_status"] == filters.claim_status]
-    if getattr(filters, "negated_claim_status", None):
-        result = result[result["claim_status"] != filters.negated_claim_status]
-    if "disease" in filter_dict:
-        result = result[result["disease"] == filters.disease]
-    if "speciality" in filter_dict:
-        result = result[result["speciality"] == filters.speciality]
-    if "payer_name" in filter_dict:
-        result = result[result["payer_name"] == filters.payer_name]
-    if "denial_reason" in filter_dict:
-        result = result[result["denial_reason"] == filters.denial_reason]
-    if "service_date_start" in filter_dict:
-        result = result[pd.to_datetime(result["service_date"]) >= pd.to_datetime(filters.service_date_start)]
-    if "service_date_end" in filter_dict:
-        result = result[pd.to_datetime(result["service_date"]) <= pd.to_datetime(filters.service_date_end)]
-    if "amount_min" in filter_dict:
-        result = result[result["claim_amount"] >= filters.amount_min]
-    if "amount_max" in filter_dict:
-        result = result[result["claim_amount"] <= filters.amount_max]
-    return result
+def plan_query(
+    classification: QueryClassification,
+    *,
+    web_search_available: bool = False,
+) -> QueryPlan:
+    """Map one local model prediction to one source with no fan-out."""
 
+    if classification.label in BLOCKED_LABELS:
+        return _plan_for("safety_block", classification, "model_safety_classification")
 
-def _reference_date(df: Optional[pd.DataFrame]) -> date:
-    if df is not None and "service_date" in df.columns and not df.empty:
-        return pd.to_datetime(df["service_date"]).max().date()
-    return date.today()
+    if classification.confidence < settings.router_min_confidence:
+        return _plan_for(
+            "general_llm",
+            classification,
+            "low_classifier_confidence",
+            warnings=(
+                "The routing model was uncertain, so no internal or external data source was opened.",
+            ),
+        )
 
+    if classification.label == "WEB_SEARCH" and not web_search_available:
+        return _plan_for(
+            "general_llm",
+            classification,
+            "web_provider_unavailable",
+            warnings=("Live web search is not configured; answering without external sources.",),
+        )
 
-def _previous_quarter(reference: date) -> tuple[date, date]:
-    current_quarter = (reference.month - 1) // 3 + 1
-    previous_quarter = current_quarter - 1
-    year = reference.year
-    if previous_quarter == 0:
-        previous_quarter = 4
-        year -= 1
-    start_month = (previous_quarter - 1) * 3 + 1
-    end_month = start_month + 2
-    start = date(year, start_month, 1)
-    if end_month == 12:
-        end = date(year, 12, 31)
-    else:
-        end = date(year, end_month + 1, 1) - timedelta(days=1)
-    return start, end
+    source_key = LABEL_TO_SOURCE.get(classification.label, "general_llm")
+    reason_code = LABEL_REASON_CODES.get(classification.label, "no_internal_data_access")
+    return _plan_for(source_key, classification, "model_intent_classification", reason_code)

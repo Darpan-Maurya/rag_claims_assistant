@@ -7,10 +7,11 @@ from typing import Dict, Iterable, List, Optional
 
 import pandas as pd
 from sentence_transformers import SentenceTransformer
+from qdrant_client.http import models
 
 from core.config import settings
 from core.observability import timed_metric
-from orchestrate.router import QueryFilters, apply_filters, extract_filters
+from orchestrate.filters import QueryFilters, apply_filters, extract_filters
 from rag.corrective import evaluate_retrieval_quality
 from rag.graph_context import ClaimsGraphContext
 from rag.query_expansion import expand_query
@@ -45,9 +46,11 @@ class ClaimsRetriever:
 
         self.vector_backend = QdrantVectorBackend()
         self.df = pd.read_parquet(METADATA_PATH)
-        self.graph_context = ClaimsGraphContext(self.df)
-        self.model = SentenceTransformer(EMBEDDING_MODEL_NAME)
         self.chunk_df = self._load_chunk_metadata()
+        # Validate Qdrant/metadata alignment before loading a potentially large
+        # embedding model. This keeps API startup fast when ingestion is incomplete.
+        self.model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+        self.graph_context = ClaimsGraphContext(self.df)
         self.uses_child_chunks = len(self.chunk_df) == self.vector_backend.size
         self.documents = self.chunk_df["child_text"].fillna("").astype(str).tolist()
         self._doc_tokens = [self._tokenize(text) for text in self.documents]
@@ -73,6 +76,7 @@ class ClaimsRetriever:
         k: int = 10,
         filters: Optional[QueryFilters] = None,
         allowed_parent_indices: Optional[set[int]] = None,
+        allowed_payers: Optional[set[str]] = None,
     ) -> RetrievalDetails:
         filters = filters or extract_filters(query, self.df)
         return self._retrieve_internal(
@@ -81,6 +85,7 @@ class ClaimsRetriever:
             filters=filters,
             allow_correction=True,
             allowed_parent_indices=allowed_parent_indices,
+            allowed_payers=allowed_payers,
         )
 
     def _retrieve_internal(
@@ -90,6 +95,7 @@ class ClaimsRetriever:
         filters: QueryFilters,
         allow_correction: bool,
         allowed_parent_indices: Optional[set[int]] = None,
+        allowed_payers: Optional[set[str]] = None,
     ) -> RetrievalDetails:
         filtered_df = apply_filters(self.df, filters)
         parent_indices = set(filtered_df.index.tolist())
@@ -111,8 +117,14 @@ class ClaimsRetriever:
             )
 
         query_variants = [query] + expand_query(query)
+        qdrant_filter = self._build_qdrant_filter(filters, allowed_payers)
         with timed_metric("dense_retrieval"):
-            dense_ranked = self._dense_search(query_variants, candidate_indices, k)
+            dense_ranked = self._dense_search(
+                query_variants,
+                candidate_indices,
+                k,
+                qdrant_filter=qdrant_filter,
+            )
         with timed_metric("lexical_retrieval"):
             lexical_ranked = self._lexical_search(query_variants, candidate_indices, max(k * 4, 30))
 
@@ -149,6 +161,9 @@ class ClaimsRetriever:
 
         summary = {
             "strategy": "parent_child_sentence_window_hybrid_rrf",
+            "ranking_score": "rrf",
+            "confidence_score": "dense_cosine_similarity",
+            "metadata_filter_mode": "qdrant_payload_and_local",
             "reranker_enabled": self._reranker is not None,
             "child_chunks_enabled": self.uses_child_chunks,
             "query_expansion_enabled": len(query_variants) > 1,
@@ -158,7 +173,16 @@ class ClaimsRetriever:
             "dense_candidates": int(len(dense_ranked)),
             "lexical_candidates": int(len(lexical_ranked)),
             "returned_count": int(len(results)),
-            "top_score": float(results["retrieval_score"].max()) if not results.empty else 0.0,
+            # RRF is a relative ranking signal (normally around 0.01-0.03), not a
+            # calibrated relevance score. Keep it visible for debugging but never
+            # use it as a threshold for answer gating.
+            "top_rrf_score": float(results["retrieval_score"].max()) if not results.empty else 0.0,
+            "top_dense_score": float(results["dense_score"].max()) if not results.empty else 0.0,
+            "top_rerank_score": (
+                float(results["rerank_score"].max())
+                if not results.empty and results["rerank_score"].notna().any()
+                else None
+            ),
         }
         parent_indices_for_graph = [int(index) for index in results.index.tolist()]
         summary["graph_context"] = self.graph_context.related_claims(parent_indices_for_graph)
@@ -175,10 +199,11 @@ class ClaimsRetriever:
                 filters=relaxed_filters,
                 allow_correction=False,
                 allowed_parent_indices=allowed_parent_indices,
+                allowed_payers=allowed_payers,
             )
             if relaxed.results.empty:
                 summary["corrective_retry"] = "no_improvement"
-            elif relaxed.retrieval_summary.get("top_score", 0.0) > summary["top_score"]:
+            elif relaxed.retrieval_summary.get("top_dense_score", 0.0) > summary["top_dense_score"]:
                 relaxed.retrieval_summary["corrective_retry"] = "used_relaxed_filters"
                 relaxed.retrieval_summary["original_filters"] = filters.to_dict()
                 return relaxed
@@ -209,22 +234,102 @@ class ClaimsRetriever:
         }
 
     def _dense_search(
-        self, query_variants: List[str], candidate_indices: set[int], k: int
+        self,
+        query_variants: List[str],
+        candidate_indices: set[int],
+        k: int,
+        qdrant_filter: models.Filter | None = None,
     ) -> List[tuple[int, float]]:
         q_emb = self.model.encode(query_variants, normalize_embeddings=True)
-        search_k = self.vector_backend.size if len(candidate_indices) < len(self.chunk_df) else min(
-            self.vector_backend.size, max(k * 8, 100)
-        )
+        search_k = min(self.vector_backend.size, max(k * 8, 100))
 
         best_scores: Dict[int, float] = {}
         for embedding in q_emb:
-            for hit in self.vector_backend.search(embedding, search_k):
+            for hit in self.vector_backend.search(
+                embedding,
+                search_k,
+                query_filter=qdrant_filter,
+            ):
                 if hit.point_id in candidate_indices:
                     best_scores[hit.point_id] = max(
                         best_scores.get(hit.point_id, 0.0),
                         hit.score,
                     )
         return sorted(best_scores.items(), key=lambda item: item[1], reverse=True)[: max(k * 4, k)]
+
+    def _build_qdrant_filter(
+        self,
+        filters: QueryFilters,
+        allowed_payers: Optional[set[str]],
+    ) -> models.Filter | None:
+        must: List[models.FieldCondition] = []
+        must_not: List[models.FieldCondition] = []
+        should: List[models.FieldCondition] = []
+
+        field_map = {
+            "claim_status": "claim_status",
+            "disease": "disease",
+            "speciality": "speciality",
+            "payer_name": "payer_name",
+            "denial_reason": "denial_reason",
+            "network_status": "network_status",
+            "plan_type": "plan_type",
+            "provider_type": "provider_type",
+            "member_state": "member_state",
+            "appeal_status": "appeal_status",
+            "prior_authorization_flag": "prior_authorization_flag",
+        }
+        for filter_field, payload_field in field_map.items():
+            value = getattr(filters, filter_field)
+            if value is not None:
+                must.append(
+                    models.FieldCondition(
+                        key=payload_field,
+                        match=models.MatchValue(value=value),
+                    )
+                )
+
+        if filters.negated_claim_status:
+            must_not.append(
+                models.FieldCondition(
+                    key="claim_status",
+                    match=models.MatchValue(value=filters.negated_claim_status),
+                )
+            )
+
+        amount_range = {}
+        if filters.amount_min is not None:
+            amount_range["gte"] = filters.amount_min
+        if filters.amount_max is not None:
+            amount_range["lte"] = filters.amount_max
+        if amount_range:
+            must.append(models.FieldCondition(key="claim_amount", range=models.Range(**amount_range)))
+
+        date_range = {}
+        if filters.service_date_start:
+            date_range["gte"] = float(pd.Timestamp(filters.service_date_start).timestamp())
+        if filters.service_date_end:
+            # Include the complete end date instead of stopping at midnight.
+            date_range["lte"] = float(
+                (pd.Timestamp(filters.service_date_end) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)).timestamp()
+            )
+        if date_range:
+            must.append(
+                models.FieldCondition(
+                    key="service_date_epoch",
+                    range=models.Range(**date_range),
+                )
+            )
+
+        if allowed_payers and "*" not in allowed_payers and not filters.payer_name:
+            should.extend(
+                models.FieldCondition(key="payer_name", match=models.MatchValue(value=payer))
+                for payer in sorted(allowed_payers)
+            )
+
+        if not must and not must_not and not should:
+            return None
+        return models.Filter(must=must or None, must_not=must_not or None, should=should or None)
 
     def _lexical_search(
         self, query_variants: List[str], candidate_indices: set[int], limit: int

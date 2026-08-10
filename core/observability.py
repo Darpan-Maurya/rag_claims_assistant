@@ -36,7 +36,7 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "timestamp": self.formatTime(record, "%Y-%m-%dT%H:%M:%S%z"),
         }
-        for key in ("request_id", "route", "status_code", "duration_ms"):
+        for key in ("request_id", "route", "status_code", "duration_ms", "error_type"):
             value = getattr(record, key, None)
             if value is not None:
                 payload[key] = value

@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
 
-from orchestrate.router import classify_query, extract_filters
+from core.query_classifier import QueryClassifier
+from orchestrate.filters import extract_filters
+from orchestrate.router import plan_query
 from rag.retriever import ClaimsRetriever
 
 
@@ -14,6 +16,7 @@ def load_golden():
 
 def main():
     retriever = ClaimsRetriever()
+    classifier = QueryClassifier()
     rows = load_golden()
     route_hits = 0
     filter_hits = 0
@@ -21,7 +24,7 @@ def main():
 
     for row in rows:
         query = row["query"]
-        route = classify_query(query)
+        route = plan_query(classifier.classify(query)).route
         filters = extract_filters(query, retriever.df).to_dict()
         route_hits += int(route == row["expected_route"])
         filter_hits += int(

@@ -14,6 +14,9 @@ RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Build the compact local routing/safety artifact from versioned labels.
+RUN python -m training.train_query_classifier
+
 EXPOSE 8000
 
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

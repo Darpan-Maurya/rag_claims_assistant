@@ -1,13 +1,16 @@
 import time
+from threading import Lock
 from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from analytics.claims_analytics import answer_analytics_query
 from core.cache import QueryCache
+from core.claims_data import ClaimsDataStore
 from core.config import settings
 from core.observability import (
     configure_logging,
@@ -24,13 +27,16 @@ from core.security import (
     visible_payers,
 )
 from core.storage import AppStorage
+from core.query_classifier import QueryClassifier, QueryClassifierUnavailable
 from etl.etl_pipeline import run_etl
 from generate_mock_data import OUTPUT_PATH, generate_claims
 from orchestrate.guardrails import check_input_guardrails, validate_grounded_answer
-from orchestrate.router import classify_query, extract_filters
+from orchestrate.filters import extract_filters
+from orchestrate.router import plan_query
 from rag.build_index import run as build_vector_index
-from rag.llm_answer import answer_query_with_context
+from rag.llm_answer import answer_general_query, answer_query_with_context, answer_web_query
 from rag.retriever import ClaimsRetriever
+from rag.web_search import WebSearchError, WebSearchService
 
 configure_logging()
 
@@ -82,7 +88,11 @@ async def request_context_middleware(request: Request, call_next):
 # =====================
 storage = AppStorage()
 query_cache = QueryCache()
+claims_data = ClaimsDataStore()
+query_classifier = QueryClassifier()
+web_search = WebSearchService()
 retriever: Optional[ClaimsRetriever] = None
+ingestion_lock = Lock()
 
 
 def load_retriever() -> Optional[ClaimsRetriever]:
@@ -150,12 +160,40 @@ def require_principal(x_api_key: Optional[str] = Header(default=None)) -> Princi
 
 
 def get_ready_retriever() -> ClaimsRetriever:
+    if ingestion_lock.locked():
+        raise HTTPException(
+            status_code=503,
+            detail="Retriever is rebuilding. Analytics and LLM-only routes remain available; retry RAG shortly.",
+        )
     if retriever is None:
         raise HTTPException(
             status_code=503,
             detail="Retriever is not ready. Run an ingestion job and check /ready.",
         )
-    return retriever
+    try:
+        if not retriever.readiness().get("ready"):
+            raise HTTPException(
+                status_code=503,
+                detail="Retriever is not ready. Run an ingestion job and check /ready.",
+            )
+        return retriever
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Retriever is temporarily unavailable. Check /ready and retry.",
+        )
+
+
+def get_ready_claims_data():
+    try:
+        return claims_data.dataframe()
+    except RuntimeError:
+        raise HTTPException(
+            status_code=503,
+            detail="Claims data is not ready. Run an ingestion job and check /ready.",
+        )
 
 
 def require_metrics_principal(principal: Principal = Depends(require_principal)) -> Principal:
@@ -229,14 +267,25 @@ def health_check():
 
 @app.get("/ready")
 def readiness_check():
-    retriever_ready = retriever.readiness() if retriever else {"ready": False, "reason": "not_loaded"}
-    return {
-        "status": "ready" if retriever_ready["ready"] else "not_ready",
+    try:
+        retriever_ready = retriever.readiness() if retriever else {"ready": False, "reason": "not_loaded"}
+    except Exception:
+        retriever_ready = {"ready": False, "reason": "readiness_check_failed"}
+    data_ready = claims_data.readiness()
+    classifier_ready = query_classifier.readiness()
+    query_ready = bool(data_ready["ready"] and classifier_ready["ready"])
+    fully_ready = bool(query_ready and retriever_ready.get("ready"))
+    payload = {
+        "status": "ready" if fully_ready else "degraded" if query_ready else "not_ready",
+        "claims_data": data_ready,
+        "query_classifier": classifier_ready,
         "retriever": retriever_ready,
         "cache": query_cache.readiness(),
         "gemini_configured": bool(settings.gemini_api_key),
+        "web_search": web_search.readiness(),
         "storage": storage.counts(),
     }
+    return JSONResponse(status_code=200 if query_ready else 503, content=payload)
 
 
 @app.get("/metrics")
@@ -282,6 +331,12 @@ def create_ingestion_job(
     request: Request,
     principal: Principal = Depends(require_ingestion_principal),
 ):
+    active_job = storage.get_active_ingestion_job()
+    if active_job:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Ingestion job {active_job['job_id']} is already {active_job['status']}.",
+        )
     job_id = str(uuid4())
     options = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     storage.create_ingestion_job(job_id, options)
@@ -307,6 +362,9 @@ def get_ingestion_job(
 
 def run_ingestion_job(job_id: str, regenerate_data: bool, rebuild_index: bool) -> None:
     global retriever
+    if not ingestion_lock.acquire(blocking=False):
+        storage.update_ingestion_job(job_id, "failed", error="Another ingestion job is already running.")
+        return
     try:
         storage.update_ingestion_job(job_id, "running")
         if regenerate_data:
@@ -315,6 +373,8 @@ def run_ingestion_job(job_id: str, regenerate_data: bool, rebuild_index: bool) -
         run_etl()
         if rebuild_index:
             build_vector_index()
+        if not claims_data.reload():
+            raise RuntimeError("Ingestion completed but claims analytics data did not become ready.")
         invalidated = query_cache.invalidate_all()
         retriever = load_retriever()
         if retriever is None:
@@ -328,6 +388,8 @@ def run_ingestion_job(job_id: str, regenerate_data: bool, rebuild_index: bool) -
         storage.update_ingestion_job(job_id, "failed", error=str(exc))
         storage.add_audit_event("ingestion_job_failed", {"job_id": job_id, "error": str(exc)})
         logger.exception("ingestion_job_failed", extra={"request_id": job_id})
+    finally:
+        ingestion_lock.release()
 
 
 @app.post("/query", response_model=QueryResponse)
@@ -335,7 +397,6 @@ def query_claims(
     payload: QueryRequest,
     request: Request,
     principal: Principal = Depends(require_principal),
-    active_retriever: ClaimsRetriever = Depends(get_ready_retriever),
 ):
     """
     Accepts a natural language query and returns a routed, evidence-grounded answer.
@@ -345,7 +406,7 @@ def query_claims(
     _validate_query_request(payload)
 
     try:
-        guardrail = check_input_guardrails(payload.query)
+        guardrail = check_input_guardrails(payload.query, query_classifier)
         storage.ensure_conversation(conversation_id)
         storage.add_message(conversation_id, "user", redact_text(payload.query) or "")
 
@@ -366,17 +427,32 @@ def query_claims(
                 request_id=request_id,
             )
 
-        accessible_df = apply_row_level_access(active_retriever.df, principal)
-        if accessible_df.empty:
-            raise HTTPException(status_code=403, detail="No row-level access grants are available.")
-
-        route = classify_query(payload.query)
-        filters = enforce_filter_access(extract_filters(payload.query, accessible_df), principal)
-        metrics.increment(f"route.{route}")
-        allowed_payers = visible_payers(
-            principal,
-            active_retriever.df["payer_name"].dropna().astype(str).unique(),
+        assert guardrail.classification is not None
+        plan = plan_query(
+            guardrail.classification,
+            web_search_available=web_search.is_available,
         )
+        route = plan.route
+        filters_dict: Dict[str, Any] = {}
+        accessible_df = None
+        allowed_payers = sorted(principal.allowed_payers)
+        execution_warnings = list(plan.warnings)
+
+        # Analytics needs structured data, RAG needs both structured data and
+        # Qdrant. LLM-only questions deliberately require neither dependency.
+        if route in {"ANALYTICS", "RAG"}:
+            claims_df = get_ready_claims_data()
+            accessible_df = apply_row_level_access(claims_df, principal)
+            if accessible_df.empty:
+                raise HTTPException(status_code=403, detail="No row-level access grants are available.")
+            filters = enforce_filter_access(extract_filters(payload.query, accessible_df), principal)
+            filters_dict = filters.to_dict()
+            allowed_payers = visible_payers(
+                principal,
+                claims_df["payer_name"].dropna().astype(str).unique(),
+            )
+
+        metrics.increment(f"route.{route}")
         cache_key = query_cache.make_key(
             user_id=principal.user_id,
             role=principal.role,
@@ -384,7 +460,7 @@ def query_claims(
             query=payload.query,
             top_k=payload.top_k,
             route=route,
-            filters=filters.to_dict(),
+            filters=filters_dict,
         )
         cached = query_cache.get(cache_key)
         if cached:
@@ -400,14 +476,14 @@ def query_claims(
                 conversation_id=conversation_id,
                 route=route,
                 query_redacted=safe_query_for_log(payload.query),
-                filters=filters.to_dict(),
+                filters=cached.get("filters", filters_dict),
                 summary=retrieval_summary,
             )
             return QueryResponse(
                 answer=answer,
                 route=route,
                 evidence=evidence,
-                filters=filters.to_dict(),
+                filters=cached.get("filters", filters_dict),
                 retrieval_summary=retrieval_summary,
                 warnings=warnings,
                 conversation_id=conversation_id,
@@ -417,6 +493,7 @@ def query_claims(
         metrics.increment("cache.miss")
 
         if route == "ANALYTICS":
+            assert accessible_df is not None
             analytics = answer_analytics_query(payload.query, accessible_df, filters)
             answer = analytics["answer"]
             retrieval_summary = analytics["metrics"]
@@ -425,19 +502,82 @@ def query_claims(
                 "allowed_payers": allowed_payers,
             }
             retrieval_summary["cache"] = {"hit": False}
+            response_filters = analytics["effective_filters"]
+            evidence = [
+                {
+                    "type": "deterministic_analytics",
+                    "metric": retrieval_summary["metric"],
+                    "population_claims": retrieval_summary["total_claims"],
+                    "metric_target": retrieval_summary["metric_target"],
+                }
+            ]
+        elif route == "LLM_ONLY":
+            answer = answer_general_query(payload.query)
+            retrieval_summary = {
+                "strategy": "llm_only",
+                "dataset_accessed": False,
+                "gemini_configured": bool(settings.gemini_api_key),
+                "cache": {"hit": False},
+            }
+            response_filters = {}
+            evidence = []
+        elif route == "WEB_SEARCH":
+            try:
+                sources = web_search.search(payload.query)
+                if sources:
+                    answer = answer_web_query(payload.query, sources)
+                else:
+                    answer = "No public web sources were returned for this question."
+                    execution_warnings.append("Live web search returned no usable sources.")
+                retrieval_summary = {
+                    "strategy": "live_public_web_search",
+                    "provider": web_search.provider,
+                    "returned_count": len(sources),
+                    "dataset_accessed": False,
+                    "cache": {"hit": False},
+                }
+                evidence = [source.to_evidence() for source in sources]
+            except WebSearchError:
+                answer = (
+                    "Live web search is temporarily unavailable. No internal claims data was "
+                    "retrieved for this question."
+                )
+                execution_warnings.append("Live web search failed before sources could be retrieved.")
+                retrieval_summary = {
+                    "strategy": "live_public_web_search",
+                    "status": "unavailable",
+                    "dataset_accessed": False,
+                    "cache": {"hit": False},
+                }
+                evidence = []
+            response_filters = {}
+        elif route == "DECISION_HELP":
+            answer = (
+                "I can summarize claim evidence or explain general claims concepts, but I cannot "
+                "make or guarantee an individual coverage decision."
+            )
+            retrieval_summary = {"strategy": "policy_refusal", "cache": {"hit": False}}
+            response_filters = {}
             evidence = []
         else:
+            assert accessible_df is not None
+            active_retriever = get_ready_retriever()
             details = active_retriever.retrieve_with_details(
                 query=payload.query,
                 k=payload.top_k,
                 filters=filters,
                 allowed_parent_indices=set(accessible_df.index.tolist()),
+                allowed_payers=set(principal.allowed_payers),
             )
             retrieved_df = details.results
 
             if retrieved_df.empty:
                 answer = "Insufficient evidence: no relevant claims were found for the given query."
-            elif details.retrieval_summary.get("top_score", 0.0) < settings.min_relevance_score:
+            elif (
+                not filters.to_dict()
+                and details.retrieval_summary.get("top_dense_score", 0.0)
+                < settings.min_dense_relevance_score
+            ):
                 answer = "Insufficient evidence: retrieved claims were below the relevance threshold."
             else:
                 answer = answer_query_with_context(
@@ -447,9 +587,17 @@ def query_claims(
             retrieval_summary = details.retrieval_summary
             retrieval_summary["cache"] = {"hit": False}
             evidence = _evidence_from_df(retrieved_df)
+            response_filters = filters_dict
 
+        retrieval_summary["router"] = plan.to_dict()
         evidence_claim_ids = [str(item.get("claim_id")) for item in evidence if item.get("claim_id")]
-        warnings = guardrail.warnings + validate_grounded_answer(answer, evidence_claim_ids, route)
+        warnings = (
+            guardrail.warnings
+            + execution_warnings
+            + validate_grounded_answer(answer, evidence_claim_ids, route)
+        )
+        if route == "LLM_ONLY":
+            warnings.append("LLM-only response: no internal claims data was retrieved.")
 
         storage.add_message(conversation_id, "assistant", redact_text(answer) or "")
         storage.add_retrieval_trace(
@@ -457,7 +605,7 @@ def query_claims(
             conversation_id=conversation_id,
             route=route,
             query_redacted=safe_query_for_log(payload.query),
-            filters=filters.to_dict(),
+            filters=response_filters,
             summary=retrieval_summary,
         )
         storage.add_audit_event(
@@ -465,35 +613,42 @@ def query_claims(
             {"route": route, "warnings": warnings},
             request_id=request_id,
         )
-        query_cache.set(
-            cache_key,
-            {
-                "answer": answer,
-                "route": route,
-                "evidence": evidence,
-                "filters": filters.to_dict(),
-                "retrieval_summary": retrieval_summary,
-                "warnings": warnings,
-            },
-        )
+        if retrieval_summary.get("status") != "unavailable":
+            query_cache.set(
+                cache_key,
+                {
+                    "answer": answer,
+                    "route": route,
+                    "evidence": evidence,
+                    "filters": response_filters,
+                    "retrieval_summary": retrieval_summary,
+                    "warnings": warnings,
+                },
+            )
+        else:
+            metrics.increment("cache.skip_transient_failure")
 
         return QueryResponse(
             answer=answer,
             route=route,
             evidence=evidence,
-            filters=filters.to_dict(),
+            filters=response_filters,
             retrieval_summary=retrieval_summary,
             warnings=warnings,
             conversation_id=conversation_id,
             request_id=request_id,
         )
 
+    except QueryClassifierUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         metrics.increment("api.query_errors")
         logger.exception("query_failed", extra={"request_id": request_id})
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to process query: {str(e)}"
+            detail="Unable to process the query. Please retry or check the service status.",
         )

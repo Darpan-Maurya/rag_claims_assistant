@@ -1,0 +1,456 @@
+{
+  "communities": {
+    "0": [
+      "rag_corrective",
+      "rag_corrective_evaluate_retrieval_quality",
+      "rag_corrective_retrievalquality",
+      "rag_graph_context",
+      "rag_graph_context_claimsgraphcontext",
+      "rag_graph_context_claimsgraphcontext_init",
+      "rag_graph_context_claimsgraphcontext_related_claims",
+      "rag_graph_context_py_dataframe",
+      "rag_graph_context_rationale_19",
+      "rag_query_expansion",
+      "rag_query_expansion_expand_query",
+      "rag_retriever",
+      "rag_retriever_claimsretriever",
+      "rag_retriever_claimsretriever_bm25_score",
+      "rag_retriever_claimsretriever_build_doc_freq",
+      "rag_retriever_claimsretriever_candidate_chunk_indices",
+      "rag_retriever_claimsretriever_dense_search",
+      "rag_retriever_claimsretriever_init",
+      "rag_retriever_claimsretriever_lexical_search",
+      "rag_retriever_claimsretriever_load_chunk_metadata",
+      "rag_retriever_claimsretriever_materialize_parent_results",
+      "rag_retriever_claimsretriever_readiness",
+      "rag_retriever_claimsretriever_reciprocal_rank_fusion",
+      "rag_retriever_claimsretriever_retrieve",
+      "rag_retriever_claimsretriever_retrieve_internal",
+      "rag_retriever_claimsretriever_retrieve_with_details",
+      "rag_retriever_claimsretriever_tokenize",
+      "rag_retriever_py_dataframe",
+      "rag_retriever_rationale_35",
+      "rag_retriever_rationale_65",
+      "rag_retriever_retrievaldetails",
+      "rag_test_retrieval",
+      "rag_test_retrieval_main",
+      "tests_test_advanced_retrieval_components",
+      "tests_test_advanced_retrieval_components_test_claims_graph_context_returns_relationships",
+      "tests_test_advanced_retrieval_components_test_crag_quality_evaluator_marks_empty_as_incorrect",
+      "tests_test_advanced_retrieval_components_test_query_expansion_is_domain_aware"
+    ],
+    "1": [
+      "analytics_claims_analytics",
+      "analytics_claims_analytics_answer_analytics_query",
+      "analytics_claims_analytics_approval_percentage",
+      "analytics_claims_analytics_py_any",
+      "analytics_claims_analytics_py_dataframe",
+      "date",
+      "eval_evaluate_retrieval",
+      "eval_evaluate_retrieval_load_golden",
+      "eval_evaluate_retrieval_main",
+      "orchestrate_guardrails",
+      "orchestrate_guardrails_check_input_guardrails",
+      "orchestrate_guardrails_guardrailresult",
+      "orchestrate_guardrails_validate_grounded_answer",
+      "orchestrate_router",
+      "orchestrate_router_apply_filters",
+      "orchestrate_router_classify_query",
+      "orchestrate_router_extract_filters",
+      "orchestrate_router_previous_quarter",
+      "orchestrate_router_py_dataframe",
+      "orchestrate_router_queryfilters",
+      "orchestrate_router_queryfilters_to_dict",
+      "orchestrate_router_reference_date",
+      "tests_test_analytics",
+      "tests_test_analytics_test_analytics_answer_uses_deterministic_counts",
+      "tests_test_analytics_test_top_n_analytics_uses_highest_amounts",
+      "tests_test_guardrails_router",
+      "tests_test_guardrails_router_test_analytics_route_and_filters",
+      "tests_test_guardrails_router_test_apply_filters",
+      "tests_test_guardrails_router_test_prompt_injection_is_blocked"
+    ],
+    "2": [
+      "api_main_require_ingestion_principal",
+      "api_main_require_metrics_principal",
+      "api_main_require_principal",
+      "core_cache",
+      "core_security",
+      "core_security_apply_row_level_access",
+      "core_security_authenticate_api_key",
+      "core_security_configured_principals",
+      "core_security_enforce_filter_access",
+      "core_security_principal",
+      "core_security_principal_can_access_all_payers",
+      "core_security_principal_can_ingest",
+      "core_security_principal_can_view_metrics",
+      "core_security_principal_is_admin",
+      "core_security_py_dataframe",
+      "core_security_visible_payers",
+      "tests_test_security_cache",
+      "tests_test_security_cache_test_cache_key_separates_payer_scopes",
+      "tests_test_security_cache_test_filter_access_rejects_disallowed_payer",
+      "tests_test_security_cache_test_row_level_access_filters_payers"
+    ],
+    "3": [
+      "protocol",
+      "rag_vector_backends",
+      "rag_vector_backends_py_any",
+      "rag_vector_backends_py_ndarray",
+      "rag_vector_backends_py_path",
+      "rag_vector_backends_qdrantvectorbackend",
+      "rag_vector_backends_qdrantvectorbackend_init",
+      "rag_vector_backends_qdrantvectorbackend_readiness",
+      "rag_vector_backends_qdrantvectorbackend_recreate_collection",
+      "rag_vector_backends_qdrantvectorbackend_search",
+      "rag_vector_backends_qdrantvectorbackend_size",
+      "rag_vector_backends_qdrantvectorbackend_upsert_vectors",
+      "rag_vector_backends_rationale_20",
+      "rag_vector_backends_vectorsearchbackend",
+      "rag_vector_backends_vectorsearchbackend_readiness",
+      "rag_vector_backends_vectorsearchbackend_recreate_collection",
+      "rag_vector_backends_vectorsearchbackend_search",
+      "rag_vector_backends_vectorsearchbackend_size",
+      "rag_vector_backends_vectorsearchbackend_upsert_vectors",
+      "rag_vector_backends_vectorsearchhit"
+    ],
+    "4": [
+      "connection",
+      "core_storage",
+      "core_storage_appstorage",
+      "core_storage_appstorage_add_audit_event",
+      "core_storage_appstorage_add_feedback",
+      "core_storage_appstorage_add_message",
+      "core_storage_appstorage_add_retrieval_trace",
+      "core_storage_appstorage_connect",
+      "core_storage_appstorage_counts",
+      "core_storage_appstorage_create_ingestion_job",
+      "core_storage_appstorage_ensure_conversation",
+      "core_storage_appstorage_get_ingestion_job",
+      "core_storage_appstorage_init",
+      "core_storage_appstorage_initialize",
+      "core_storage_appstorage_update_ingestion_job",
+      "core_storage_py_any",
+      "core_storage_py_path",
+      "core_storage_utc_now"
+    ],
+    "5": [
+      "core_config",
+      "core_config_as_bool",
+      "core_config_as_int",
+      "core_config_as_json",
+      "core_config_as_list",
+      "core_config_py_any",
+      "core_config_settings",
+      "core_config_settings_post_init",
+      "rag_llm_answer",
+      "rag_llm_answer_answer_query_with_context",
+      "rag_llm_answer_build_context_from_claims",
+      "rag_llm_answer_fallback_evidence_answer",
+      "rag_llm_answer_py_dataframe",
+      "rag_llm_answer_value",
+      "series",
+      "test_rag_qa",
+      "test_rag_qa_main"
+    ],
+    "6": [
+      "rag_build_index",
+      "rag_build_index_build_embeddings",
+      "rag_build_index_build_payloads",
+      "rag_build_index_build_vector_collection",
+      "rag_build_index_jsonable",
+      "rag_build_index_load_data",
+      "rag_build_index_py_any",
+      "rag_build_index_py_dataframe",
+      "rag_build_index_py_ndarray",
+      "rag_build_index_run",
+      "rag_build_index_save_metadata",
+      "rag_chunking",
+      "rag_chunking_build_parent_child_chunks",
+      "rag_chunking_py_dataframe",
+      "rag_chunking_split_sentences",
+      "tests_test_advanced_retrieval_components_test_parent_child_sentence_window_chunks"
+    ],
+    "7": [
+      "api_main_create_ingestion_job",
+      "api_main_feedbackrequest",
+      "api_main_feedbackresponse",
+      "api_main_ingestionrequest",
+      "api_main_ingestionresponse",
+      "api_main_queryresponse",
+      "api_main_request_context_middleware",
+      "api_main_submit_feedback",
+      "backgroundtasks",
+      "basemodel",
+      "middleware",
+      "post",
+      "request"
+    ],
+    "8": [
+      "api_main",
+      "api_main_get_ingestion_job",
+      "api_main_get_ready_retriever",
+      "api_main_health_check",
+      "api_main_load_retriever",
+      "api_main_metrics_endpoint",
+      "api_main_readiness_check",
+      "api_main_run_ingestion_job",
+      "generate_mock_data",
+      "generate_mock_data_choose_denial_reason",
+      "generate_mock_data_generate_claims",
+      "get"
+    ],
+    "9": [
+      "core_observability",
+      "core_observability_configure_logging",
+      "core_observability_jsonformatter",
+      "core_observability_jsonformatter_format",
+      "core_observability_metricsregistry",
+      "core_observability_metricsregistry_increment",
+      "core_observability_metricsregistry_init",
+      "core_observability_metricsregistry_observe_latency",
+      "core_observability_metricsregistry_snapshot",
+      "core_observability_py_any",
+      "core_observability_timed_metric",
+      "logrecord"
+    ],
+    "10": [
+      "etl_etl_pipeline",
+      "etl_etl_pipeline_extract",
+      "etl_etl_pipeline_load",
+      "etl_etl_pipeline_py_dataframe",
+      "etl_etl_pipeline_run_etl",
+      "etl_etl_pipeline_transform",
+      "etl_etl_pipeline_validate_input",
+      "etl_etl_pipeline_write_manifest",
+      "tests_test_etl_validation",
+      "tests_test_etl_validation_base_claims_df",
+      "tests_test_etl_validation_test_transform_adds_claim_text_and_optional_defaults",
+      "tests_test_etl_validation_test_transform_rejects_duplicate_claim_ids"
+    ],
+    "11": [
+      "api_main_evidence_from_df",
+      "api_main_py_any",
+      "api_main_query_claims",
+      "api_main_queryrequest",
+      "api_main_rationale_340",
+      "api_main_validate_query_request",
+      "core_observability_redact_text",
+      "core_observability_safe_query_for_log"
+    ],
+    "12": [
+      "core_cache_py_any",
+      "core_cache_querycache",
+      "core_cache_querycache_get",
+      "core_cache_querycache_init",
+      "core_cache_querycache_invalidate_all",
+      "core_cache_querycache_make_key",
+      "core_cache_querycache_readiness",
+      "core_cache_querycache_set"
+    ],
+    "13": [
+      "ui_app",
+      "ui_app_headers",
+      "ui_app_post_feedback"
+    ],
+    "14": [
+      "core_init",
+      "core_init_rationale_1"
+    ],
+    "15": [
+      "analytics_init"
+    ],
+    "16": [
+      "api_init"
+    ],
+    "17": [
+      "etl_init"
+    ],
+    "18": [
+      "exp"
+    ],
+    "19": [
+      "orchestrate_init"
+    ],
+    "20": [
+      "rag_init"
+    ],
+    "21": [
+      "rag_list_gemini_models"
+    ],
+    "22": [
+      "ui_init"
+    ]
+  },
+  "cohesion": {
+    "0": 0.1066066066066066,
+    "1": 0.15517241379310345,
+    "2": 0.1736842105263158,
+    "3": 0.14210526315789473,
+    "4": 0.2549019607843137,
+    "5": 0.18382352941176472,
+    "6": 0.24166666666666667,
+    "7": 0.20512820512820512,
+    "8": 0.2727272727272727,
+    "9": 0.19696969696969696,
+    "10": 0.3787878787878788,
+    "11": 0.32142857142857145,
+    "12": 0.35714285714285715,
+    "13": 1.0,
+    "14": 1.0,
+    "15": 1.0,
+    "16": 1.0,
+    "17": 1.0,
+    "18": 1.0,
+    "19": 1.0,
+    "20": 1.0,
+    "21": 1.0,
+    "22": 1.0
+  },
+  "gods": [
+    {
+      "id": "rag_retriever_claimsretriever",
+      "label": "ClaimsRetriever",
+      "degree": 35
+    },
+    {
+      "id": "core_security_principal",
+      "label": "Principal",
+      "degree": 29
+    },
+    {
+      "id": "api_main_query_claims",
+      "label": "query_claims()",
+      "degree": 22
+    },
+    {
+      "id": "core_storage_appstorage",
+      "label": "AppStorage",
+      "degree": 20
+    },
+    {
+      "id": "orchestrate_router_queryfilters",
+      "label": "QueryFilters",
+      "degree": 19
+    },
+    {
+      "id": "core_cache_querycache",
+      "label": "QueryCache",
+      "degree": 16
+    },
+    {
+      "id": "orchestrate_router_extract_filters",
+      "label": "extract_filters()",
+      "degree": 14
+    },
+    {
+      "id": "rag_vector_backends_qdrantvectorbackend",
+      "label": "QdrantVectorBackend",
+      "degree": 13
+    },
+    {
+      "id": "analytics_claims_analytics_answer_analytics_query",
+      "label": "answer_analytics_query()",
+      "degree": 11
+    },
+    {
+      "id": "orchestrate_router_apply_filters",
+      "label": "apply_filters()",
+      "degree": 10
+    }
+  ],
+  "surprises": [
+    {
+      "source": "QueryRequest",
+      "target": "QueryCache",
+      "source_files": [
+        "api/main.py",
+        "core/cache.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "uses",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "QueryRequest",
+      "target": "Principal",
+      "source_files": [
+        "api/main.py",
+        "core/security.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "uses",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "QueryRequest",
+      "target": "AppStorage",
+      "source_files": [
+        "api/main.py",
+        "core/storage.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "uses",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "QueryRequest",
+      "target": "ClaimsRetriever",
+      "source_files": [
+        "api/main.py",
+        "rag/retriever.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "uses",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "QueryResponse",
+      "target": "QueryCache",
+      "source_files": [
+        "api/main.py",
+        "core/cache.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "uses",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    }
+  ],
+  "questions": [
+    {
+      "type": "bridge_node",
+      "question": "Why does `ClaimsRetriever` connect `Community 0` to `Community 1`, `Community 3`, `Community 5`, `Community 7`, `Community 8`, `Community 11`?",
+      "why": "High betweenness centrality (0.185) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `AppStorage` connect `Community 4` to `Community 8`, `Community 11`, `Community 7`?",
+      "why": "High betweenness centrality (0.113) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `QdrantVectorBackend` connect `Community 3` to `Community 0`, `Community 6`?",
+      "why": "High betweenness centrality (0.087) - this node is a cross-community bridge."
+    },
+    {
+      "type": "verify_inferred",
+      "question": "Are the 9 inferred relationships involving `ClaimsRetriever` (e.g. with `FeedbackRequest` and `FeedbackResponse`) actually correct?",
+      "why": "`ClaimsRetriever` has 9 INFERRED edges - model-reasoned connections that need verification."
+    },
+    {
+      "type": "verify_inferred",
+      "question": "Are the 7 inferred relationships involving `Principal` (e.g. with `FeedbackRequest` and `FeedbackResponse`) actually correct?",
+      "why": "`Principal` has 7 INFERRED edges - model-reasoned connections that need verification."
+    },
+    {
+      "type": "verify_inferred",
+      "question": "Are the 6 inferred relationships involving `AppStorage` (e.g. with `FeedbackRequest` and `FeedbackResponse`) actually correct?",
+      "why": "`AppStorage` has 6 INFERRED edges - model-reasoned connections that need verification."
+    },
+    {
+      "type": "verify_inferred",
+      "question": "Are the 3 inferred relationships involving `QueryFilters` (e.g. with `Principal` and `ClaimsRetriever`) actually correct?",
+      "why": "`QueryFilters` has 3 INFERRED edges - model-reasoned connections that need verification."
+    }
+  ]
+}

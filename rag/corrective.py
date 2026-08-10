@@ -12,7 +12,7 @@ class RetrievalQuality:
 def evaluate_retrieval_quality(summary: Dict[str, object]) -> RetrievalQuality:
     returned = int(summary.get("returned_count", 0) or 0)
     candidate_count = int(summary.get("candidate_count", 0) or 0)
-    top_score = float(summary.get("top_score", 0.0) or 0.0)
+    top_dense_score = float(summary.get("top_dense_score", 0.0) or 0.0)
     dense_candidates = int(summary.get("dense_candidates", 0) or 0)
     lexical_candidates = int(summary.get("lexical_candidates", 0) or 0)
 
@@ -23,7 +23,9 @@ def evaluate_retrieval_quality(summary: Dict[str, object]) -> RetrievalQuality:
             reason="No candidate evidence matched the query and filters.",
         )
 
-    confidence = min(1.0, top_score * 12)
+    # Dense cosine similarity is a usable confidence proxy. RRF is deliberately
+    # excluded because it is only a relative rank and has a tiny score range.
+    confidence = max(0.0, min(1.0, (top_dense_score + 1.0) / 2.0))
     if dense_candidates > 0 and lexical_candidates > 0:
         confidence = min(1.0, confidence + 0.2)
 

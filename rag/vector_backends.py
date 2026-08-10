@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Protocol
+from urllib.parse import urlparse
 
 import numpy as np
 from qdrant_client import QdrantClient
@@ -30,7 +31,12 @@ class VectorSearchBackend(Protocol):
     ) -> None:
         ...
 
-    def search(self, query_embedding: np.ndarray, top_k: int) -> List[VectorSearchHit]:
+    def search(
+        self,
+        query_embedding: np.ndarray,
+        top_k: int,
+        query_filter: models.Filter | None = None,
+    ) -> List[VectorSearchHit]:
         ...
 
     @property
@@ -54,7 +60,27 @@ class QdrantVectorBackend:
         self.api_key = api_key if api_key is not None else settings.qdrant_api_key
         self.local_path = local_path or settings.qdrant_local_path
         if self.url:
-            self.client = QdrantClient(url=self.url, api_key=self.api_key)
+            parsed_url = urlparse(self.url)
+            local_hosts = {"localhost", "127.0.0.1", "::1", "qdrant"}
+            if (
+                self.api_key
+                and parsed_url.scheme == "http"
+                and parsed_url.hostname not in local_hosts
+            ):
+                raise ValueError(
+                    "Refusing to send QDRANT_API_KEY over an insecure remote HTTP connection. "
+                    "Use HTTPS for managed Qdrant."
+                )
+            client_api_key = (
+                None
+                if parsed_url.scheme == "http" and parsed_url.hostname in local_hosts
+                else self.api_key
+            )
+            self.client = QdrantClient(
+                url=self.url,
+                api_key=client_api_key,
+                check_compatibility=False,
+            )
             self.mode = "remote"
         else:
             self.local_path.mkdir(parents=True, exist_ok=True)
@@ -71,6 +97,9 @@ class QdrantVectorBackend:
                 distance=models.Distance.COSINE,
             ),
         )
+        if self.mode == "local":
+            # Qdrant Local evaluates payload filters but does not persist indexes.
+            return
         for field in [
             "claim_id",
             "parent_row_index",
@@ -79,6 +108,11 @@ class QdrantVectorBackend:
             "disease",
             "speciality",
             "denial_reason",
+            "network_status",
+            "plan_type",
+            "provider_type",
+            "member_state",
+            "appeal_status",
         ]:
             try:
                 self.client.create_payload_index(
@@ -89,6 +123,15 @@ class QdrantVectorBackend:
             except Exception:
                 # Payload indexes are an optimization. Collection creation should not fail
                 # if a local/older Qdrant version does not support one field schema.
+                pass
+        for field in ["claim_amount", "service_date_epoch"]:
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name=field,
+                    field_schema=models.PayloadSchemaType.FLOAT,
+                )
+            except Exception:
                 pass
 
     def upsert_vectors(
@@ -109,7 +152,12 @@ class QdrantVectorBackend:
             ]
             self.client.upsert(collection_name=self.collection_name, points=points)
 
-    def search(self, query_embedding: np.ndarray, top_k: int) -> List[VectorSearchHit]:
+    def search(
+        self,
+        query_embedding: np.ndarray,
+        top_k: int,
+        query_filter: models.Filter | None = None,
+    ) -> List[VectorSearchHit]:
         query_vector = query_embedding.astype("float32").tolist()
         try:
             response = self.client.query_points(
@@ -117,6 +165,7 @@ class QdrantVectorBackend:
                 query=query_vector,
                 limit=top_k,
                 with_payload=True,
+                query_filter=query_filter,
             )
             points = getattr(response, "points", response)
         except Exception:
@@ -125,6 +174,7 @@ class QdrantVectorBackend:
                 query_vector=query_vector,
                 limit=top_k,
                 with_payload=True,
+                query_filter=query_filter,
             )
         return [
             VectorSearchHit(

@@ -3,6 +3,11 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   qdrant:
     image: qdrant/qdrant:v1.10.1
@@ -11,6 +16,11 @@ services:
       - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   api:
     build: .
@@ -25,6 +35,9 @@ services:
       REDIS_URL: redis://redis:6379/0
       ENABLE_QUERY_CACHE: "true"
       QUERY_CACHE_TTL_SECONDS: "300"
+      ENABLE_RERANKER: ${ENABLE_RERANKER:-false}
+      RERANKER_MODEL_NAME: ${RERANKER_MODEL_NAME:-cross-encoder/ms-marco-MiniLM-L-6-v2}
+      MIN_DENSE_RELEVANCE_SCORE: ${MIN_DENSE_RELEVANCE_SCORE:-0.20}
       CORS_ORIGINS: http://localhost:8501,http://127.0.0.1:8501
       LOG_FULL_QUERIES: "false"
     volumes:
@@ -33,6 +46,17 @@ services:
     depends_on:
       - redis
       - qdrant
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
   ui:
     build: .
@@ -44,6 +68,17 @@ services:
       RAG_API_KEY: ${RAG_API_KEY:-local-dev-key}
     depends_on:
       - api
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
 volumes:
   qdrant_data:

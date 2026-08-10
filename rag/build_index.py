@@ -61,6 +61,15 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
+def _epoch_seconds(value: Any) -> float | None:
+    if pd.isna(value):
+        return None
+    timestamp = pd.to_datetime(value, errors="coerce")
+    if pd.isna(timestamp):
+        return None
+    return float(timestamp.timestamp())
+
+
 def build_payloads(chunks: pd.DataFrame, parents: pd.DataFrame) -> list[Dict[str, Any]]:
     payloads: list[Dict[str, Any]] = []
     parent_fields = [
@@ -72,6 +81,12 @@ def build_payloads(chunks: pd.DataFrame, parents: pd.DataFrame) -> list[Dict[str
         "denial_reason",
         "service_date",
         "claim_amount",
+        "network_status",
+        "plan_type",
+        "provider_type",
+        "member_state",
+        "appeal_status",
+        "prior_authorization_flag",
     ]
     for _, chunk in chunks.iterrows():
         parent = parents.iloc[int(chunk["parent_row_index"])]
@@ -86,6 +101,8 @@ def build_payloads(chunks: pd.DataFrame, parents: pd.DataFrame) -> list[Dict[str
         for field in parent_fields:
             if field in parent:
                 payload[field] = _jsonable(parent[field])
+        if "service_date" in parent:
+            payload["service_date_epoch"] = _epoch_seconds(parent["service_date"])
         payloads.append(payload)
     return payloads
 
