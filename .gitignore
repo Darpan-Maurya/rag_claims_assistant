@@ -8,3 +8,4 @@ __pycache__/
 venv/
 data/app_state.sqlite3
 data/qdrant/
+graphify/
